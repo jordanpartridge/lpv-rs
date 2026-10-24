@@ -1,0 +1,8 @@
+# Negated export-ignore strategy with a bin directory
+* text=auto eol=lf
+* export-ignore
+
+/src/ -export-ignore
+composer.json -export-ignore
+
+*.php diff=php
