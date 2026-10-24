@@ -160,6 +160,56 @@ fn update_fixes_missing_ignores() {
     assert_eq!(lpv(&dir, &["validate"]).status.code(), Some(0));
 }
 
+#[cfg(unix)]
+#[test]
+fn update_refuses_symlinked_gitattributes() {
+    let (tmp, dir) = fixture("missing-ignores");
+    let outside = tmp.path().join("outside.txt");
+    std::fs::write(&outside, "keep me\n").expect("write outside");
+    std::fs::remove_file(dir.join(".gitattributes")).expect("rm");
+    std::os::unix::fs::symlink(&outside, dir.join(".gitattributes")).expect("symlink");
+
+    let out = lpv(&dir, &["update"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains("Update of .gitattributes file failed."));
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("read"),
+        "keep me\n"
+    );
+    assert!(
+        std::fs::symlink_metadata(dir.join(".gitattributes"))
+            .expect("meta")
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn create_refuses_symlinked_gitattributes() {
+    let (tmp, dir) = fixture("no-gitattributes");
+
+    // Dangling link: `create` without --force must not create the target.
+    let missing = tmp.path().join("missing-target");
+    std::os::unix::fs::symlink(&missing, dir.join(".gitattributes")).expect("symlink");
+    let out = lpv(&dir, &["create"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains("Creation of .gitattributes file failed."));
+    assert!(!missing.exists());
+
+    // Existing target: `create --force` must not overwrite it.
+    let outside = tmp.path().join("outside.txt");
+    std::fs::write(&outside, "keep me\n").expect("write outside");
+    std::fs::remove_file(dir.join(".gitattributes")).expect("rm");
+    std::os::unix::fs::symlink(&outside, dir.join(".gitattributes")).expect("symlink");
+    let out = lpv(&dir, &["create", "--force"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("read"),
+        "keep me\n"
+    );
+}
+
 #[test]
 fn negated_update_keeps_strategy() {
     let (_tmp, dir) = fixture("negated-bin");
