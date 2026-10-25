@@ -71,6 +71,20 @@ fn io_reason(e: &std::io::Error) -> String {
     }
 }
 
+/// Write the generated `.gitattributes`, refusing to follow a symlink.
+///
+/// `std::fs::write` follows symlinks, so a `.gitattributes` link (dangling or
+/// not) would write the generated content to wherever it points. Only a
+/// regular file, or no file, is written.
+fn write_gitattributes(fs_path: &Path, content: &str) -> std::io::Result<()> {
+    if let Ok(meta) = std::fs::symlink_metadata(fs_path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(std::io::Error::other("refusing to write through a symlink"));
+    }
+    std::fs::write(fs_path, content)
+}
+
 fn realpath(cwd: &Path, directory: &str) -> String {
     std::fs::canonicalize(cwd.join(directory))
         .map(|p| p.to_string_lossy().into_owned())
@@ -732,7 +746,7 @@ pub fn create(args: &CreateArgs, ctx: &mut Ctx) -> Result<(i32, Option<WriteRepo
         return finish_write(ctx, report, 0);
     }
     let content = apply_overwrite_header_policy(fs_path.is_file(), &expected);
-    if let Err(e) = std::fs::write(&fs_path, &content) {
+    if let Err(e) = write_gitattributes(&fs_path, &content) {
         // lpv surfaces this as a PHP engine warning on stderr.
         ctx.out.warn(&format!(
             "lpv-rs: warning: cannot write {path}: {}",
@@ -820,7 +834,7 @@ pub fn update(args: &UpdateArgs, ctx: &mut Ctx) -> Result<(i32, Option<WriteRepo
         return finish_write(ctx, report, 0);
     }
     let content = apply_overwrite_header_policy(fs_path.is_file(), &expected);
-    if let Err(e) = std::fs::write(&fs_path, &content) {
+    if let Err(e) = write_gitattributes(&fs_path, &content) {
         // lpv surfaces this as a PHP engine warning on stderr.
         ctx.out.warn(&format!(
             "lpv-rs: warning: cannot write {path}: {}",
